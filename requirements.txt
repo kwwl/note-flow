@@ -1,0 +1,7 @@
+python-dotenv
+groq
+fastapi
+uvicorn[standard]
+python-multipart
+gspread
+google-auth
