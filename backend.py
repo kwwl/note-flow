@@ -95,7 +95,12 @@ class GoogleSheetsClient:
     def upload_image_to_drive(
         self, image_bytes: bytes, filename: str, media_type: str = "image/jpeg"
     ) -> str:
-        file_metadata = {"name": filename}
+        folder_id = os.environ.get("GOOGLE_DRIVE_FOLDER_ID")
+        file_metadata = (
+            {"name": filename, "parents": [folder_id]}
+            if folder_id
+            else {"name": filename}
+        )
         media = MediaIoBaseUpload(io.BytesIO(image_bytes), mimetype=media_type)
 
         uploaded = (
