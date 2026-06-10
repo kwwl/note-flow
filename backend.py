@@ -118,8 +118,9 @@ class SupabaseStorage:
 class GoogleSheetsClient:
     def __init__(self):
         load_dotenv()
-        creds = Credentials.from_service_account_file(
-            os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+        service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+        creds = Credentials.from_service_account_info(
+            service_account_info,
             scopes=SCOPES,
         )
         self.gc = gspread.authorize(creds)
