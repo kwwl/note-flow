@@ -118,8 +118,9 @@ class SupabaseStorage:
 class GoogleSheetsClient:
     def __init__(self):
         load_dotenv()
-        creds = Credentials.from_service_account_file(
-            os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"],
+        service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+        creds = Credentials.from_service_account_info(
+            service_account_info,
             scopes=SCOPES,
         )
         self.gc = gspread.authorize(creds)
@@ -132,10 +133,11 @@ class GoogleSheetsClient:
         self, data: dict, user: dict = None, image_url: str = None
     ) -> None:
         from datetime import datetime
+        from zoneinfo import ZoneInfo
 
         image_formula = f'=IMAGE("{image_url}")' if image_url else ""
         hyperlink_formula = f'=HYPERLINK("{image_url}", "Voir le ticket")' if image_url else ""
-        horodatage = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        horodatage = datetime.now(ZoneInfo("Europe/Paris")).strftime("%d/%m/%Y %H:%M:%S")
 
         row = [
             user.get("id", "") if user else "",
