@@ -5,4 +5,5 @@ uvicorn[standard]
 python-multipart
 gspread
 google-auth
+google-api-python-client
 supabase
