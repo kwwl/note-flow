@@ -1,91 +1,220 @@
-const fileInput = document.getElementById("file-input");
-const previewContainer = document.getElementById("preview-container");
-const preview = document.getElementById("preview");
-const fileName = document.getElementById("file-name");
-const analyzeBtn = document.getElementById("analyze-btn");
-const dropZone = document.getElementById("drop-zone");
-const resetBtn = document.getElementById("reset-btn");
-const resultContainer = document.getElementById("result");
+let supabaseClient = null;
+let currentSession = null; // session stockée de façon synchrone pour HTMX
 
-// Prévisualisation + encodage base64 à la sélection du fichier
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files[0];
-  if (!file) return;
+async function initSupabase() {
+  const res = await fetch("/api/config");
+  const { supabase_url, supabase_anon_key } = await res.json();
+  supabaseClient = supabase.createClient(supabase_url, supabase_anon_key);
+  checkAuthState();
+}
 
-  // Prévisualisation (libère l'URL objet après chargement)
-  const url = URL.createObjectURL(file);
-  preview.src = url;
-  preview.onload = () => URL.revokeObjectURL(url);
+async function checkAuthState() {
+  const {
+    data: { session },
+  } = await supabaseClient.auth.getSession();
+  currentSession = session;
+  if (session) {
+    await showApp(session.user);
+  } else {
+    showAuth();
+  }
 
-  fileName.textContent = file.name;
-  previewContainer.style.display = "block";
-  analyzeBtn.disabled = false;
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    currentSession = session; // mise à jour synchrone
+    if (session) {
+      await showApp(session.user);
+    } else {
+      showAuth();
+    }
+  });
+}
 
-  // Encodage base64 pour injection éventuelle côté client
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    // Stocké sur l'objet window pour usage futur si besoin
-    window._imageBase64 = e.target.result.split(",")[1];
-  };
-  reader.readAsDataURL(file);
-});
+function showAuth() {
+  document.getElementById("auth-section").hidden = false;
+  document.getElementById("app-section").hidden = true;
+}
 
-// Drag & drop
-dropZone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  dropZone.classList.add("dragover");
-});
+async function showApp(user) {
+  document.getElementById("auth-section").hidden = true;
+  document.getElementById("app-section").hidden = false;
 
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("dragover");
-});
+  const { data: profile } = await supabaseClient
+    .from("profiles")
+    .select("nom, prenom")
+    .eq("id", user.id)
+    .maybeSingle();
 
-dropZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropZone.classList.remove("dragover");
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
+  const display = profile ? `${profile.prenom} ${profile.nom}` : user.email;
 
-  // Injecter dans l'input pour que HTMX puisse le soumettre
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  fileInput.files = dt.files;
-  fileInput.dispatchEvent(new Event("change"));
-});
+  document.getElementById("user-display").textContent = display;
+}
 
-// Désactiver le bouton pendant la requête d'analyse
-document.body.addEventListener("htmx:beforeRequest", (e) => {
-  if (e.detail.elt.id === "upload-form") {
-    analyzeBtn.disabled = true;
-    analyzeBtn.textContent = "Analyse en cours…";
+function switchTab(tab) {
+  const isLogin = tab === "login";
+  document.getElementById("login-form").hidden = !isLogin;
+  document.getElementById("signup-form").hidden = isLogin;
+  document.getElementById("tab-login").classList.toggle("active", isLogin);
+  document.getElementById("tab-signup").classList.toggle("active", !isLogin);
+  document.getElementById("auth-error").style.display = "none";
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById("auth-error");
+  el.textContent = msg;
+  el.style.display = "block";
+  el.style.background = "rgba(231,76,60,0.1)";
+  el.style.borderColor = "rgba(231,76,60,0.3)";
+  el.style.color = "var(--error)";
+}
+
+async function handleLogin() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) { showAuthError(error.message); return; }
+
+  // Affiche le message de confirmation email
+  const el = document.getElementById("auth-error");
+  el.textContent = "✅ Un email de confirmation vient de vous être envoyé. Veuillez consulter votre boîte mail et cliquer sur le lien de validation pour activer votre compte.";
+  el.style.display = "block";
+  el.style.background = "rgba(46,204,113,0.1)";
+  el.style.borderColor = "rgba(46,204,113,0.3)";
+  el.style.color = "#2ecc71";
+}
+
+async function handleSignup() {
+  const nom = document.getElementById("signup-nom").value.trim();
+  const prenom = document.getElementById("signup-prenom").value.trim();
+  const email = document.getElementById("signup-email").value.trim();
+  const password = document.getElementById("signup-password").value;
+
+  if (!nom || !prenom) {
+    showAuthError("Veuillez renseigner votre nom et prénom.");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: { data: { nom, prenom } },
+  });
+
+  if (error) {
+    showAuthError(error.message);
+  } else {
+    const el = document.getElementById("auth-error");
+    el.textContent = "✉️ Un email de confirmation vient de vous être envoyé. Veuillez consulter votre boîte mail et cliquer sur le lien de validation pour activer votre compte.";
+    el.style.display = "block";
+    el.style.background = "rgba(46,204,113,0.1)";
+    el.style.borderColor = "rgba(46,204,113,0.3)";
+    el.style.color = "#2ecc71";
+  }
+}
+
+async function handleLogout() {
+  await supabaseClient.auth.signOut();
+  resetApp();
+}
+
+document.body.addEventListener("htmx:configRequest", (e) => {
+  if (currentSession?.access_token) {
+    e.detail.headers["Authorization"] = `Bearer ${currentSession.access_token}`;
   }
 });
 
-// Après un swap réussi : afficher reset + scroller vers le résultat
+document.addEventListener("DOMContentLoaded", () => {
+  const fileInput = document.getElementById("file-input");
+  const preview = document.getElementById("preview");
+  const previewContainer = document.getElementById("preview-container");
+  const fileName = document.getElementById("file-name");
+  const analyzeBtn = document.getElementById("analyze-btn");
+  const dropZone = document.getElementById("drop-zone");
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    preview.onload = () => URL.revokeObjectURL(url);
+    fileName.textContent = file.name;
+    previewContainer.style.display = "block";
+    analyzeBtn.disabled = false;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      window._imageBase64 = e.target.result.split(",")[1];
+    };
+    reader.readAsDataURL(file);
+  });
+
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+
+  dropZone.addEventListener("dragleave", () =>
+    dropZone.classList.remove("dragover"),
+  );
+
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("change"));
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", (e) => {
+    if (e.detail.elt.id === "upload-form") {
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = "Analyse en cours…";
+    }
+  });
+});
+
 document.body.addEventListener("htmx:afterSwap", (e) => {
   if (e.detail.target.id === "result") {
-    resetBtn.style.display = "block";
-    resultContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    document.getElementById("reset-btn").style.display = "block";
+    e.detail.target.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 });
 
-// HTMX ne swape pas sur les réponses 4xx/5xx par défaut — on le fait manuellement
 document.body.addEventListener("htmx:responseError", (e) => {
-  const fragment = e.detail.xhr.responseText;
-  resultContainer.innerHTML = fragment;
-  resetBtn.style.display = "block";
-  resultContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const result = document.getElementById("result");
+  result.innerHTML = e.detail.xhr.responseText;
+  document.getElementById("reset-btn").style.display = "block";
+  result.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
 function resetApp() {
-  fileInput.value = "";
-  preview.src = "";
-  previewContainer.style.display = "none";
-  fileName.textContent = "";
-  analyzeBtn.disabled = true;
-  analyzeBtn.textContent = "Analyser la note de frais";
-  window._imageBase64 = null;
+  const fileInput = document.getElementById("file-input");
+  const analyzeBtn = document.getElementById("analyze-btn");
+  const preview = document.getElementById("preview");
+  const previewContainer = document.getElementById("preview-container");
 
-  resultContainer.innerHTML = "";
-  resetBtn.style.display = "none";
+  if (fileInput) fileInput.value = "";
+  if (preview) preview.src = "";
+  if (previewContainer) previewContainer.style.display = "none";
+  if (analyzeBtn) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = "Analyser la note de frais";
+  }
+
+  const result = document.getElementById("result");
+  if (result) result.innerHTML = "";
+
+  const resetBtn = document.getElementById("reset-btn");
+  if (resetBtn) resetBtn.style.display = "none";
+
+  window._imageBase64 = null;
 }
+
+initSupabase();

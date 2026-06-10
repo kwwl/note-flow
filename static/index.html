@@ -36,22 +36,13 @@
     header {
       text-align: center;
       margin-bottom: 40px;
+      width: 100%;
+      max-width: 640px;
     }
 
-    header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      color: var(--text);
-    }
-
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
     header h1 span { color: var(--accent); }
-
-    header p {
-      margin-top: 6px;
-      color: var(--text-muted);
-      font-size: 0.95rem;
-    }
+    header p { margin-top: 6px; color: var(--text-muted); font-size: 0.95rem; }
 
     .card {
       background: var(--surface);
@@ -63,7 +54,93 @@
       margin-bottom: 20px;
     }
 
-    /* Upload zone */
+    /* ── Auth ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .auth-input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 11px 14px;
+      font-size: 0.9rem;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .auth-input:focus { border-color: var(--accent); }
+
+    .auth-input::placeholder { color: var(--text-muted); }
+
+    .auth-error {
+      background: rgba(231,76,60,0.1);
+      border: 1px solid rgba(231,76,60,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--error);
+      font-size: 0.85rem;
+      margin-top: 8px;
+      display: none;
+    }
+
+    /* ── User bar ── */
+    #user-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 20px;
+    }
+
+    #user-bar span { font-size: 0.9rem; color: var(--text-muted); }
+    #user-bar strong { color: var(--text); }
+
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .btn-logout:hover { color: var(--error); border-color: var(--error); }
+
+    /* ── Drop zone ── */
     .drop-zone {
       border: 2px dashed var(--border);
       border-radius: var(--radius);
@@ -92,11 +169,7 @@
     .drop-zone p { color: var(--text-muted); font-size: 0.9rem; }
     .drop-zone p strong { color: var(--text); }
 
-    #preview-container {
-      display: none;
-      margin-top: 16px;
-      text-align: center;
-    }
+    #preview-container { display: none; margin-top: 16px; text-align: center; }
 
     #preview {
       max-width: 100%;
@@ -106,13 +179,9 @@
       object-fit: contain;
     }
 
-    #file-name {
-      margin-top: 8px;
-      font-size: 0.82rem;
-      color: var(--text-muted);
-    }
+    #file-name { margin-top: 8px; font-size: 0.82rem; color: var(--text-muted); }
 
-    /* Buttons */
+    /* ── Buttons ── */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -127,13 +196,7 @@
       transition: background 0.2s, opacity 0.2s;
     }
 
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-      width: 100%;
-      margin-top: 16px;
-    }
-
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; margin-top: 16px; }
     .btn-primary:hover { background: var(--accent-hover); }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -144,13 +207,12 @@
       width: 100%;
       max-width: 640px;
       margin-top: 4px;
+      display: none;
     }
 
     .btn-reset:hover { color: var(--text); border-color: var(--text-muted); }
 
-    #reset-btn { display: none; }
-
-    /* Loader */
+    /* ── Loader ── */
     .loader {
       display: none;
       align-items: center;
@@ -175,7 +237,7 @@
 
     #result { width: 100%; max-width: 640px; }
 
-    /* Form fragment styles */
+    /* ── Form fragment ── */
     .expense-form {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -183,27 +245,9 @@
       padding: 28px;
     }
 
-    .expense-form h2 {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 20px;
-    }
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 16px;
-    }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px;
-    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
     .form-group label {
       font-size: 0.78rem;
@@ -228,7 +272,6 @@
 
     .form-group input:focus,
     .form-group select:focus { border-color: var(--accent); }
-
     .form-group select option { background: var(--surface-2); }
 
     .confidence-badge {
@@ -261,7 +304,7 @@
 
     .btn-submit:hover { background: var(--accent-hover); }
 
-    /* Success / Error */
+    /* ── Success / Error ── */
     .result-success {
       background: var(--surface);
       border: 1px solid rgba(46,204,113,0.3);
@@ -270,12 +313,7 @@
       text-align: center;
     }
 
-    .success-message {
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: var(--success);
-      margin-bottom: 16px;
-    }
+    .success-message { font-size: 1.05rem; font-weight: 600; color: var(--success); margin-bottom: 16px; }
 
     .archived-img {
       max-width: 100%;
@@ -303,44 +341,83 @@
     <p>Analysez vos justificatifs et synchronisez-les avec Google Sheets</p>
   </header>
 
-  <div class="card" id="upload-card">
-    <form
-      id="upload-form"
-      hx-post="/api/analyze"
-      hx-target="#result"
-      hx-swap="innerHTML"
-      hx-encoding="multipart/form-data"
-      hx-indicator="#loader"
-    >
-      <div class="drop-zone" id="drop-zone">
-        <div class="icon">📄</div>
-        <p><strong>Glissez une image ici</strong></p>
-        <p>ou cliquez pour choisir un fichier</p>
-        <input type="file" name="file" id="file-input" accept="image/jpeg,image/png,image/webp" capture="environment" />
-      </div>
+  <!-- ── Section Auth (visible si non connecté) ── -->
+  <div id="auth-section" class="card">
+    <div class="tabs">
+      <button class="tab active" id="tab-login" onclick="switchTab('login')">Connexion</button>
+      <button class="tab" id="tab-signup" onclick="switchTab('signup')">Inscription</button>
+    </div>
 
-      <div id="preview-container">
-        <img id="preview" alt="Prévisualisation" />
-        <p id="file-name"></p>
-      </div>
+    <!-- Connexion -->
+    <div id="login-form">
+      <input class="auth-input" type="email" id="login-email" placeholder="Email" />
+      <input class="auth-input" type="password" id="login-password" placeholder="Mot de passe" />
+      <button class="btn btn-primary" onclick="handleLogin()">Se connecter</button>
+    </div>
 
-      <button type="submit" class="btn btn-primary" id="analyze-btn" disabled>
-        Analyser la note de frais
-      </button>
-    </form>
+    <!-- Inscription -->
+    <div id="signup-form" hidden>
+      <input class="auth-input" type="text" id="signup-prenom" placeholder="Prénom" />
+      <input class="auth-input" type="text" id="signup-nom" placeholder="Nom" />
+      <input class="auth-input" type="email" id="signup-email" placeholder="Email" />
+      <input class="auth-input" type="password" id="signup-password" placeholder="Mot de passe (min. 6 caractères)" />
+      <button class="btn btn-primary" onclick="handleSignup()">Créer mon compte</button>
+    </div>
+
+    <p id="auth-error" class="auth-error"></p>
   </div>
 
-  <div id="loader" class="loader">
-    <div class="spinner"></div>
-    Analyse en cours…
+  <!-- ── Application principale (visible si connecté) ── -->
+  <div id="app-section" hidden>
+
+    <!-- Barre utilisateur -->
+    <div id="user-bar">
+      <span>Connecté en tant que <strong id="user-display"></strong></span>
+      <button class="btn-logout" onclick="handleLogout()">Déconnexion</button>
+    </div>
+
+    <!-- Upload card -->
+    <div class="card">
+      <form
+        id="upload-form"
+        hx-post="/api/analyze"
+        hx-target="#result"
+        hx-swap="innerHTML"
+        hx-encoding="multipart/form-data"
+        hx-indicator="#loader"
+      >
+        <div class="drop-zone" id="drop-zone">
+          <div class="icon">📄</div>
+          <p><strong>Glissez une image ici</strong></p>
+          <p>ou cliquez pour choisir un fichier</p>
+          <input type="file" name="file" id="file-input" accept="image/jpeg,image/png,image/webp" capture="environment" />
+        </div>
+
+        <div id="preview-container">
+          <img id="preview" alt="Prévisualisation" />
+          <p id="file-name"></p>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="analyze-btn" disabled>
+          Analyser la note de frais
+        </button>
+      </form>
+    </div>
+
+    <div id="loader" class="loader">
+      <div class="spinner"></div>
+      Analyse en cours…
+    </div>
+
+    <div id="result"></div>
+
+    <button class="btn btn-reset" id="reset-btn" onclick="resetApp()">
+      ↩ Nouvelle note de frais
+    </button>
+
   </div>
 
-  <div id="result"></div>
-
-  <button class="btn btn-reset" id="reset-btn" onclick="resetApp()">
-    ↩ Nouvelle note de frais
-  </button>
-
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

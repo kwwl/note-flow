@@ -7,6 +7,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from supabase import create_client
 import io
 
 SCOPES = [
@@ -73,10 +74,45 @@ class ExpenseAgent:
         )
 
         raw = json.loads(chat_completion.choices[0].message.content)
-
         result = {field: raw.get(field, None) for field in EXPECTED_FIELDS}
-
         return result
+
+
+class SupabaseStorage:
+    def __init__(self):
+        load_dotenv()
+        self.client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_KEY"],
+        )
+        self.bucket = os.environ.get("SUPABASE_BUCKET", "tickets")
+
+    def verify_jwt(self, token: str):
+        """Vérifie le JWT Supabase et retourne l'objet user."""
+        response = self.client.auth.get_user(token)
+        return response.user
+
+    def get_profile(self, user_id: str) -> dict:
+        """Récupère nom et prénom depuis la table profiles."""
+        response = (
+            self.client.table("profiles")
+            .select("nom, prenom")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        return response.data or {}
+
+    def upload_image(
+        self, image_bytes: bytes, filename: str, media_type: str = "image/jpeg"
+    ) -> str:
+        """Upload l'image dans le bucket Supabase Storage et retourne l'URL publique."""
+        self.client.storage.from_(self.bucket).upload(
+            path=filename,
+            file=image_bytes,
+            file_options={"content-type": media_type, "upsert": "true"},
+        )
+        return self.client.storage.from_(self.bucket).get_public_url(filename)
 
 
 class GoogleSheetsClient:
@@ -92,44 +128,19 @@ class GoogleSheetsClient:
         )
         self.drive = build("drive", "v3", credentials=creds)
 
-    def upload_image_to_drive(
-        self, image_bytes: bytes, filename: str, media_type: str = "image/jpeg"
-    ) -> str:
-        folder_id = os.environ.get("GOOGLE_DRIVE_FOLDER_ID")
-        file_metadata = (
-            {"name": filename, "parents": [folder_id]}
-            if folder_id
-            else {"name": filename}
-        )
-        media = MediaIoBaseUpload(io.BytesIO(image_bytes), mimetype=media_type)
-
-        uploaded = (
-            self.drive.files()
-            .create(
-                body=file_metadata,
-                media_body=media,
-                fields="id",
-            )
-            .execute()
-        )
-
-        file_id = uploaded.get("id")
-
-        # Rendre le fichier public en lecture
-        self.drive.permissions().create(
-            fileId=file_id,
-            body={"type": "anyone", "role": "reader"},
-        ).execute()
-
-        return f"https://drive.google.com/uc?id={file_id}"
-
-    def append_expense(self, data: dict, image_url: str = None) -> None:
+    def append_expense(
+        self, data: dict, user: dict = None, image_url: str = None
+    ) -> None:
         from datetime import datetime
 
         image_formula = f'=IMAGE("{image_url}")' if image_url else ""
+        hyperlink_formula = f'=HYPERLINK("{image_url}", "Voir le ticket")' if image_url else ""
         horodatage = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
         row = [
+            user.get("id", "") if user else "",
+            user.get("nom", "") if user else "",
+            user.get("prenom", "") if user else "",
             horodatage,
             data.get("type_document", ""),
             data.get("fournisseur", ""),
@@ -140,6 +151,7 @@ class GoogleSheetsClient:
             data.get("description", ""),
             data.get("confiance", ""),
             image_formula,
+            hyperlink_formula,
         ]
 
         self.sheet.append_row(row, value_input_option="USER_ENTERED")

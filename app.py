@@ -1,10 +1,13 @@
 import base64
+import os
+import unicodedata
 from pathlib import Path
 from html import escape
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, Depends
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from backend import ExpenseAgent, GoogleSheetsClient
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from backend import ExpenseAgent, GoogleSheetsClient, SupabaseStorage
 
 BASE_DIR = Path(__file__).parent
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 Mo
@@ -15,6 +18,9 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 agent = ExpenseAgent()
 sheets = GoogleSheetsClient()
+supabase = SupabaseStorage()
+
+security = HTTPBearer()
 
 CONFIDENCE_CLASS = {
     "haute": "confidence-high",
@@ -22,6 +28,25 @@ CONFIDENCE_CLASS = {
     "basse": "confidence-low",
 }
 
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> dict:
+    try:
+        user = supabase.verify_jwt(credentials.credentials)
+        profile = supabase.get_profile(str(user.id))
+        return {
+            "id": str(user.id),
+            "nom": profile.get("nom", ""),
+            "prenom": profile.get("prenom", ""),
+        }
+    except Exception:
+        raise HTTPException(401, detail="Session expirée. Veuillez vous reconnecter.")
+
+
+# ── Fragments HTML ─────────────────────────────────────────────────────────────
 
 def build_form_fragment(data: dict, image_b64: str, media_type: str) -> str:
     def v(field):
@@ -81,9 +106,7 @@ def build_form_fragment(data: dict, image_b64: str, media_type: str) -> str:
   </div>
   <div class="form-group">
     <label>Confiance</label>
-    <select name="confiance">
-      {confiance_options}
-    </select>
+    <select name="confiance">{confiance_options}</select>
     <span class="confidence-badge {confidence_class}">{escape(str(data.get("confiance", "—")))}</span>
   </div>
   <input type="hidden" name="image_data" value="{image_b64}" />
@@ -94,7 +117,10 @@ def build_form_fragment(data: dict, image_b64: str, media_type: str) -> str:
 
 
 def build_success_fragment(image_url: str = None) -> str:
-    img_tag = f'<img src="{escape(image_url)}" alt="Justificatif archivé" class="archived-img" />' if image_url else ""
+    img_tag = (
+        f'<img src="{escape(image_url)}" alt="Justificatif archivé" class="archived-img" />'
+        if image_url else ""
+    )
     return f"""
 <div class="result-success">
   <p class="success-message">✅ Note de frais enregistrée avec succès dans Google Sheets.</p>
@@ -102,6 +128,8 @@ def build_success_fragment(image_url: str = None) -> str:
 </div>
 """
 
+
+# ── Gestionnaire d'erreurs ─────────────────────────────────────────────────────
 
 @app.exception_handler(HTTPException)
 async def htmx_exception_handler(request: Request, exc: HTTPException):
@@ -111,17 +139,31 @@ async def htmx_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/config")
+async def get_config():
+    """Expose les clés publiques Supabase au frontend."""
+    return JSONResponse({
+        "supabase_url": os.environ["SUPABASE_URL"],
+        "supabase_anon_key": os.environ["SUPABASE_ANON_KEY"],
+    })
+
+
 @app.get("/", response_class=FileResponse)
 async def serve_frontend():
     return FileResponse(BASE_DIR / "static" / "index.html")
 
 
 @app.post("/api/analyze", response_class=HTMLResponse)
-async def analyze_image(file: UploadFile = File(...)):
+async def analyze_image(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(415, detail="Type de fichier non supporté. Veuillez envoyer une image.")
+        raise HTTPException(415, detail="Type de fichier non supporté.")
     if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(415, detail=f"Format non supporté : {file.content_type}. Formats acceptés : JPEG, PNG, WEBP.")
+        raise HTTPException(415, detail=f"Format non supporté : {file.content_type}.")
 
     image_bytes = await file.read()
     if len(image_bytes) > MAX_FILE_SIZE:
@@ -148,6 +190,7 @@ async def submit_expense(
     confiance: str = Form(""),
     image_data: str = Form(""),
     media_type: str = Form("image/jpeg"),
+    current_user: dict = Depends(get_current_user),
 ):
     data = {
         "type_document": type_document,
@@ -160,9 +203,30 @@ async def submit_expense(
         "confiance": confiance or None,
     }
 
+    # Upload image vers Supabase Storage
+    image_url = None
+    if image_data:
+        try:
+            image_bytes = base64.b64decode(image_data)
+            def slugify(s):
+                s = unicodedata.normalize("NFD", s)
+                s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+                return s.lower().replace(" ", "_")
+
+            nom = slugify(current_user.get("nom", "inconnu"))
+            prenom = slugify(current_user.get("prenom", "inconnu"))
+            user_id = current_user.get("id", "")[:8]
+            date_clean = (date or "sans-date").replace("/", "-")
+            ext = "jpg" if "jpeg" in media_type else media_type.split("/")[-1]
+            filename = f"{user_id}_{nom}_{prenom}_{date_clean}.{ext}"
+            image_url = supabase.upload_image(image_bytes, filename=filename, media_type=media_type)
+        except Exception as e:
+            raise HTTPException(500, detail=f"Erreur upload image : {str(e)}")
+
+    # Écriture dans Google Sheets
     try:
-        sheets.append_expense(data=data, image_url=None)
+        sheets.append_expense(data=data, user=current_user, image_url=image_url)
     except Exception as e:
         raise HTTPException(500, detail=f"Erreur Google Sheets : {str(e)}")
 
-    return HTMLResponse(content=build_success_fragment())
+    return HTMLResponse(content=build_success_fragment(image_url))
