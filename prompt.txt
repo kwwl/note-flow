@@ -1,0 +1,20 @@
+Analyse cette note de frais et extrais les informations suivantes.
+
+Retourne UNIQUEMENT un objet JSON valide avec exactement ces champs :
+
+{
+  "type_document": string — catégorie du justificatif, une valeur parmi : "restaurant", "transport", "hôtel", "autre",
+  "fournisseur": string — nom du commerce ou de la compagnie (ex : "SNCF", "Bistrot Paul", "Ibis"), ou null si illisible,
+  "date": string — date de la dépense au format JJ/MM/AAAA (ex : "05/06/2025"), ou null si absente ou illisible,
+  "montant_ttc": number — montant total TTC en euros, nombre décimal (ex : 24.50), ou null si illisible,
+  "tva": number — montant de la TVA si explicitement indiqué sur le document, nombre décimal (ex : 4.08), ou null sinon,
+  "devise": string — devise utilisée (ex : "EUR", "USD"), "EUR" par défaut si non précisée,
+  "description": string — courte description du motif de la dépense inférée depuis le document (ex : "Déjeuner d'affaires", "Billet Paris-Lyon aller simple"),
+  "confiance": string — niveau de confiance global de l'extraction, une valeur parmi : "haute", "moyen", "basse"
+}
+
+Règles strictes :
+- Ne retourne aucun texte en dehors du JSON
+- N'utilise pas de balises markdown (pas de ```json)
+- Si un champ est absent, illisible ou ambigu, sa valeur est null
+- Ne jamais inventer ou estimer un montant ou une date
