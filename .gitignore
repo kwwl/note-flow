@@ -2,10 +2,10 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+.env.example
 # C extensions
 *.so
-
+credential-note-flow.json
 # Distribution / packaging
 .Python
 build/
@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+*.json
 lib64/
 parts/
 sdist/
