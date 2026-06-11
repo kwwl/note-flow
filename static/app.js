@@ -47,6 +47,18 @@ async function showApp(user) {
   const display = profile ? `${profile.prenom} ${profile.nom}` : user.email;
 
   document.getElementById("user-display").textContent = display;
+
+  loadHistory();
+}
+
+async function loadHistory() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return;
+  const res = await fetch("/api/history", {
+    headers: { "Authorization": `Bearer ${session.access_token}` }
+  });
+  const html = await res.text();
+  document.getElementById("history-container").innerHTML = html;
 }
 
 function switchTab(tab) {
@@ -184,6 +196,8 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
   if (e.detail.target.id === "result") {
     document.getElementById("reset-btn").style.display = "block";
     e.detail.target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // Rafraîchit l'historique après un submit réussi
+    if (e.detail.requestConfig?.path === "/api/submit") loadHistory();
   }
 });
 
