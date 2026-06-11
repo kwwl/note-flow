@@ -1,12 +1,19 @@
 import base64
+import io
 import os
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from html import escape
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, Depends
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, Depends, Query
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from backend import ExpenseAgent, GoogleSheetsClient, SupabaseStorage
 
 BASE_DIR = Path(__file__).parent
@@ -28,8 +35,14 @@ CONFIDENCE_CLASS = {
     "basse": "confidence-low",
 }
 
+MOIS_FR = {
+    1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
+    5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
+    9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre",
+}
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -129,6 +142,104 @@ def build_success_fragment(image_url: str = None) -> str:
 """
 
 
+def build_history_fragment(expenses: list) -> str:
+    if not expenses:
+        return '<p class="text-muted">Aucune note de frais pour le moment.</p>'
+
+    rows = ""
+    for e in expenses:
+        montant = f"{e.get('montant_ttc') or '—'} {e.get('devise') or 'EUR'}"
+        image_link = f'<a href="{escape(e["image_url"])}" target="_blank">🖼</a>' if e.get("image_url") else "—"
+        rows += f"""
+        <tr>
+          <td>{escape(str(e.get("date") or "—"))}</td>
+          <td>{escape(str(e.get("type_document") or "—"))}</td>
+          <td>{escape(str(e.get("fournisseur") or "—"))}</td>
+          <td>{escape(str(montant))}</td>
+          <td>{image_link}</td>
+        </tr>"""
+
+    return f"""
+<div class="history-card">
+  <h3 class="history-title">Mes 5 dernières notes de frais</h3>
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Date</th><th>Type</th><th>Fournisseur</th><th>Montant</th><th>Ticket</th>
+      </tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>
+"""
+
+
+# ── Génération PDF ─────────────────────────────────────────────────────────────
+
+def generate_pdf(expenses: list, profile: dict, year: int, month: int) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Titre
+    title_style = ParagraphStyle("title", parent=styles["Title"],
+                                  fontSize=18, spaceAfter=6)
+    story.append(Paragraph("NoteFlow — Récapitulatif des notes de frais", title_style))
+
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"],
+                                fontSize=11, textColor=colors.grey, spaceAfter=4)
+    nom_complet = f"{profile.get('prenom', '')} {profile.get('nom', '')}".strip()
+    story.append(Paragraph(f"{nom_complet} — {MOIS_FR[month]} {year}", sub_style))
+    story.append(Spacer(1, 0.5*cm))
+
+    if not expenses:
+        story.append(Paragraph("Aucune note de frais pour ce mois.", styles["Normal"]))
+    else:
+        # En-têtes
+        headers = ["Date", "Type", "Fournisseur", "Description", "Montant TTC", "TVA", "Devise"]
+        table_data = [headers]
+        total = 0.0
+
+        for e in expenses:
+            montant = e.get("montant_ttc") or 0
+            total += montant
+            table_data.append([
+                e.get("date") or "—",
+                e.get("type_document") or "—",
+                e.get("fournisseur") or "—",
+                e.get("description") or "—",
+                f"{montant:.2f} €",
+                f"{e.get('tva') or '—'}",
+                e.get("devise") or "EUR",
+            ])
+
+        # Ligne total
+        table_data.append(["", "", "", "TOTAL", f"{total:.2f} €", "", ""])
+
+        col_widths = [2.5*cm, 2.5*cm, 3.5*cm, 5*cm, 2.5*cm, 2*cm, 1.5*cm]
+        t = Table(table_data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#5b6ef5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f5f6ff")]),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#eef0ff")),
+            ("FONTNAME", (3, -1), (4, -1), "Helvetica-Bold"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("PADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t)
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
 # ── Gestionnaire d'erreurs ─────────────────────────────────────────────────────
 
 @app.exception_handler(HTTPException)
@@ -143,7 +254,6 @@ async def htmx_exception_handler(request: Request, exc: HTTPException):
 
 @app.get("/api/config")
 async def get_config():
-    """Expose les clés publiques Supabase au frontend."""
     return JSONResponse({
         "supabase_url": os.environ["SUPABASE_URL"],
         "supabase_anon_key": os.environ["SUPABASE_ANON_KEY"],
@@ -153,6 +263,11 @@ async def get_config():
 @app.get("/", response_class=FileResponse)
 async def serve_frontend():
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/dashboard", response_class=FileResponse)
+async def serve_dashboard():
+    return FileResponse(BASE_DIR / "static" / "dashboard.html")
 
 
 @app.post("/api/analyze", response_class=HTMLResponse)
@@ -203,11 +318,11 @@ async def submit_expense(
         "confiance": confiance or None,
     }
 
-    # Upload image vers Supabase Storage
     image_url = None
     if image_data:
         try:
             image_bytes = base64.b64decode(image_data)
+
             def slugify(s):
                 s = unicodedata.normalize("NFD", s)
                 s = "".join(c for c in s if unicodedata.category(c) != "Mn")
@@ -223,10 +338,58 @@ async def submit_expense(
         except Exception as e:
             raise HTTPException(500, detail=f"Erreur upload image : {str(e)}")
 
-    # Écriture dans Google Sheets
     try:
         sheets.append_expense(data=data, user=current_user, image_url=image_url)
     except Exception as e:
         raise HTTPException(500, detail=f"Erreur Google Sheets : {str(e)}")
 
+    try:
+        supabase.save_expense(user_id=current_user["id"], data=data, image_url=image_url)
+    except Exception as e:
+        raise HTTPException(500, detail=f"Erreur sauvegarde Supabase : {str(e)}")
+
     return HTMLResponse(content=build_success_fragment(image_url))
+
+
+@app.get("/api/history", response_class=HTMLResponse)
+async def get_history(current_user: dict = Depends(get_current_user)):
+    try:
+        expenses = supabase.get_history(current_user["id"])
+    except Exception as e:
+        raise HTTPException(500, detail=f"Erreur historique : {str(e)}")
+    return HTMLResponse(content=build_history_fragment(expenses))
+
+
+@app.get("/api/export-pdf")
+async def export_pdf(
+    month: str = Query(..., description="Format YYYY-MM"),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        year, m = map(int, month.split("-"))
+    except ValueError:
+        raise HTTPException(400, detail="Format de mois invalide. Utilisez YYYY-MM.")
+
+    try:
+        expenses = supabase.get_monthly_expenses(current_user["id"], year, m)
+        profile = supabase.get_profile(current_user["id"])
+        pdf_bytes = generate_pdf(expenses, profile, year, m)
+    except Exception as e:
+        raise HTTPException(500, detail=f"Erreur génération PDF : {str(e)}")
+
+    nom = profile.get("nom", "employe").lower().replace(" ", "_")
+    filename = f"notes-frais-{nom}-{month}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/api/dashboard/stats")
+async def dashboard_stats(current_user: dict = Depends(get_current_user)):
+    try:
+        stats = supabase.get_dashboard_stats(current_user["id"])
+    except Exception as e:
+        raise HTTPException(500, detail=f"Erreur stats : {str(e)}")
+    return JSONResponse(stats)
